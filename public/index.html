@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reprodutor de TV Avançado</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="tv-container">
+
+    <!-- Header -->
+    <div class="tv-header">
+        <div class="logo-area">
+            <span class="logo-text">sky</span>
+            <span class="page-name">Home</span>
+        </div>
+        <div class="header-icons">
+            <img src="https://via.placeholder.com/24/cccccc/000000?text=A" alt="Icon" class="header-icon">
+            <img src="https://via.placeholder.com/24/cccccc/000000?text=B" alt="Icon" class="header-icon">
+            <img src="https://via.placeholder.com/24/cccccc/000000?text=C" alt="Icon" class="header-icon">
+            <img src="https://via.placeholder.com/24/cccccc/000000?text=D" alt="Icon" class="header-icon">
+        </div>
+        <div class="header-info">
+            <span class="rating">PG</span>
+            <span class="video-quality">HD,DD,W</span>
+            <span class="current-time" id="current-time"></span>
+        </div>
+    </div>
+<!-- Main Content -->
+    <div class="tv-main-content">
+
+        <!-- Tela de play embutida -->
+        <div class="play-overlay" id="play-overlay">
+            <video id="mini-player" controls autoplay muted playsinline></video>
+            <button class="expand-button" id="expand-button">⛶</button>
+        </div>
+
+        <!-- Área de detalhes do programa -->
+        <div class="program-details-area">
+            <h2 class="program-title">Selecione um canal</h2>
+            <p class="program-description">Clique em qualquer canal abaixo para assistir ao vivo.</p>
+            <button class="info-button">Press ⓘ for more</button>
+        </div>
+
+    
+
+
+
+       <div class="now-playing-preview" id="now-playing-preview">
+            <img src="https://via.placeholder.com/180x100/333333/ffffff?text=NOW+PLAYING" 
+                alt="Now Playing Thumbnail" 
+                class="preview-thumbnail" 
+                id="preview-thumbnail">
+            <div class="preview-info">
+                <span class="coming-up-text" id="coming-up-text">COMING UP</span>
+                <span class="program-time" id="program-time">--:--</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Footer / Channels -->
+    <div class="tv-footer">
+        <div class="channel-list-area" id="channel-scroll-container"></div>
+    </div>
+
+    <!-- Video Overlay -->
+    <div id="video-overlay" class="video-overlay hidden">
+        <video id="video-player" controls autoplay></video>
+        <button id="close-video" class="close-button">X</button>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="app.js"></script>
+</body>
+</html>
