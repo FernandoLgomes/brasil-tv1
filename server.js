@@ -2,21 +2,27 @@ const express = require("express");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const os = require("os");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ---------------------------
 // Pasta temporária HLS
+// ---------------------------
 const hlsDir = path.join(__dirname, "hls");
 if (!fs.existsSync(hlsDir)) fs.mkdirSync(hlsDir);
 
 const activeFFMPEG = new Map();
 
-// Caminho para o ffmpeg
-let ffmpegPath = path.join(__dirname, "ffmpeg");
+// ---------------------------
+// Caminho do FFmpeg
+// ---------------------------
+// Para Render, baixe FFmpeg estático no build e coloque aqui
+const ffmpegPath = path.join(__dirname, "ffmpeg");
 
+// ---------------------------
 // Middleware CORS
+// ---------------------------
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
@@ -26,10 +32,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// ---------------------------
 // Servir frontend
+// ---------------------------
 app.use(express.static("public"));
 
-// Endpoint canais
+// ---------------------------
+// Endpoint de canais
+// ---------------------------
 app.get("/api/channels", (req, res) => {
   const filePath = path.join(__dirname, "channels.txt");
   fs.readFile(filePath, "utf8", (err, data) => {
@@ -56,9 +66,13 @@ app.get("/api/channels", (req, res) => {
   });
 });
 
+// ---------------------------
 // Proxy Live TS -> HLS
+// ---------------------------
 app.get("/live/:channelId.m3u8", (req, res) => {
   const channelId = req.params.channelId;
+
+  // Procurar URL do canal no arquivo channels.txt
   const filePath = path.join(__dirname, "channels.txt");
   const data = fs.readFileSync(filePath, "utf8");
   const lines = data.split(/\r?\n/);
@@ -90,6 +104,12 @@ app.get("/live/:channelId.m3u8", (req, res) => {
     ]);
 
     ffmpeg.stderr.on("data", data => console.log(`[FFmpeg ${channelId}] ${data.toString()}`));
+
+    ffmpeg.on("error", err => {
+      console.error(`[FFmpeg ${channelId}] ERRO:`, err);
+      activeFFMPEG.delete(channelId);
+    });
+
     ffmpeg.on("close", code => {
       console.log(`[FFmpeg ${channelId}] finalizado com código ${code}`);
       activeFFMPEG.delete(channelId);
@@ -98,32 +118,50 @@ app.get("/live/:channelId.m3u8", (req, res) => {
     activeFFMPEG.set(channelId, ffmpeg);
   }
 
+  // Espera segura pelo playlist com timeout
+  let waited = 0;
   const waitForPlaylist = setInterval(() => {
     if (fs.existsSync(playlist)) {
       clearInterval(waitForPlaylist);
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.sendFile(playlist);
+    } else if (waited > 10000) { // 10s timeout
+      clearInterval(waitForPlaylist);
+      res.status(500).send("Erro ao gerar playlist HLS");
     }
+    waited += 500;
   }, 500);
 });
 
-// Servir segmentos
+// ---------------------------
+// Servir segmentos HLS
+// ---------------------------
 app.use("/hls", express.static(hlsDir));
 
-// Limpeza periódica
+// ---------------------------
+// Limpeza periódica de segmentos antigos
+// ---------------------------
 setInterval(() => {
   const now = Date.now();
   if (!fs.existsSync(hlsDir)) return;
+
   fs.readdirSync(hlsDir).forEach(dir => {
     const channelPath = path.join(hlsDir, dir);
     fs.readdirSync(channelPath).forEach(file => {
       const filePath = path.join(channelPath, file);
       const stats = fs.statSync(filePath);
-      if (now - stats.mtimeMs > 60 * 1000) fs.unlinkSync(filePath);
+
+      // Mantém o playlist, remove apenas segmentos antigos
+      if (file.endsWith(".ts") && (now - stats.mtimeMs > 60 * 1000)) {
+        fs.unlinkSync(filePath);
+      }
     });
   });
 }, 30 * 1000);
 
+// ---------------------------
+// Iniciar servidor
+// ---------------------------
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
