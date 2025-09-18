@@ -8,7 +8,8 @@
     "postinstall": "curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | tar -xJ && mv ffmpeg-*/ffmpeg ./ffmpeg && chmod +x ./ffmpeg"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
   },
   "engines": {
     "node": ">=22.0.0"

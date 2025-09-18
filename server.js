@@ -7,21 +7,30 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Pasta HLS
+// Pasta temporária HLS
 const hlsDir = path.join(__dirname, "hls");
 if (!fs.existsSync(hlsDir)) fs.mkdirSync(hlsDir);
 
 const activeFFMPEG = new Map();
 
-// Caminho do FFmpeg
-let ffmpegPath = path.join(__dirname, "ffmpeg");
+// Caminho para o ffmpeg
+const ffmpegPath = path.join(__dirname, "ffmpeg");
 
 // Middleware CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range");
-  res.header("Access-Control-Expose-Headers", "Content-Length, Content-Range");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Range"
+  );
+  res.header(
+    "Access-Control-Expose-Headers",
+    "Content-Length, Content-Range"
+  );
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -30,11 +39,10 @@ app.use((req, res, next) => {
 app.use(express.static("public"));
 
 // Endpoint canais
-app.get("/api/channels", (req, res) => {
+app.get("/api/channels", async (req, res) => {
   const filePath = path.join(__dirname, "channels.txt");
-  fs.readFile(filePath, "utf8", (err, data) => {
-    if (err) return res.status(500).json({ error: "Erro ao ler arquivo de canais" });
-
+  try {
+    const data = fs.readFileSync(filePath, "utf8");
     const lines = data.split(/\r?\n/);
     const channels = [];
 
@@ -47,41 +55,26 @@ app.get("/api/channels", (req, res) => {
         const name = nameMatch ? nameMatch[1] : "Sem nome";
         const logo = logoMatch ? logoMatch[1] : "";
         const idMatch = urlLine.match(/\/(\d+)\.ts$/);
-        const id = idMatch ? idMatch[1] : "";
+        const id = idMatch ? idMatch[1] : i.toString();
         channels.push({ name, logo, id, url: urlLine });
         i++;
       }
     }
+
     res.json(channels);
-  });
-});
-
-// Proxy HTTPS para streams HTTP
-app.get("/proxy", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).send("URL faltando");
-
-  try {
-    const response = await axios({
-      url,
-      method: "GET",
-      responseType: "stream",
-    });
-    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
-    response.data.pipe(res);
   } catch (err) {
-    console.error("Erro no proxy:", err.message);
-    res.status(500).send("Erro no proxy");
+    res.status(500).json({ error: "Erro ao ler arquivo de canais" });
   }
 });
 
 // Proxy Live TS -> HLS
-app.get("/live/:channelId.m3u8", (req, res) => {
+app.get("/live/:channelId.m3u8", async (req, res) => {
   const channelId = req.params.channelId;
   const filePath = path.join(__dirname, "channels.txt");
+
+  let channelUrl = null;
   const data = fs.readFileSync(filePath, "utf8");
   const lines = data.split(/\r?\n/);
-  let channelUrl = null;
 
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].startsWith("#EXTINF") && lines[i + 1].includes(`/${channelId}.ts`)) {
@@ -92,14 +85,18 @@ app.get("/live/:channelId.m3u8", (req, res) => {
 
   if (!channelUrl) return res.status(404).send("Canal não encontrado");
 
-  const proxiedUrl = `/proxy?url=${encodeURIComponent(channelUrl)}`;
+  // Proxy para HTTPS caso seja HTTP
+  if (channelUrl.startsWith("http://")) {
+    channelUrl = `/proxy?url=${encodeURIComponent(channelUrl)}`;
+  }
+
   const channelDir = path.join(hlsDir, channelId);
   const playlist = path.join(channelDir, "index.m3u8");
   if (!fs.existsSync(channelDir)) fs.mkdirSync(channelDir, { recursive: true });
 
   if (!activeFFMPEG.has(channelId)) {
     const ffmpeg = spawn(ffmpegPath, [
-      "-i", proxiedUrl,
+      "-i", channelUrl,
       "-c", "copy",
       "-f", "hls",
       "-hls_time", "5",
@@ -125,6 +122,25 @@ app.get("/live/:channelId.m3u8", (req, res) => {
       res.sendFile(playlist);
     }
   }, 500);
+});
+
+// Proxy genérico para HTTP -> HTTPS
+app.get("/proxy", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).send("URL não fornecida");
+
+  try {
+    const response = await axios({
+      method: "get",
+      url,
+      responseType: "stream"
+    });
+    res.setHeader("Content-Type", response.headers["content-type"]);
+    response.data.pipe(res);
+  } catch (err) {
+    console.error("Erro no proxy:", err.message);
+    res.status(500).send("Erro ao acessar URL externa");
+  }
 });
 
 // Servir segmentos
