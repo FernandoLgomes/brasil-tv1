@@ -1,17 +1,19 @@
 {
   "name": "brasil-tv1",
   "version": "1.0.0",
+  "description": "Servidor de TV com proxy HLS",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | tar -xJ && mv ffmpeg-*/ffmpeg ./ffmpeg && chmod +x ./ffmpeg"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "express": "^5.1.0",
-    "ffmpeg-static": "^5.2.0"
-  }
+    "express": "^4.18.2",
+    "hls.js": "^2.2.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Fernando",
+  "license": "MIT"
 }
