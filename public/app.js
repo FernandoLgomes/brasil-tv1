@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
             channels.forEach(ch => {
                 const div = document.createElement("div");
                 div.classList.add("channel-item");
-                div.innerHTML = `<img src="${ch.logo}" alt="${ch.name}"><span>${ch.name}</span>`;
+                div.innerHTML = `<img src="/proxy?url=${encodeURIComponent(ch.logo)}" alt="${ch.name}"><span>${ch.name}</span>`;
                 div.onclick = () => playChannel(ch);
                 container.appendChild(div);
             });
@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const hlsUrl = `/live/${channel.id}.m3u8`;
 
         // Atualiza miniatura e nome do canal
-        previewThumbnail.src = channel.logo;
+        previewThumbnail.src = `/proxy?url=${encodeURIComponent(channel.logo)}`;
         comingUpText.textContent = channel.name;
 
         // --- Mini-player ---

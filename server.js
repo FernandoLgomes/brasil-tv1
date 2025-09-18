@@ -2,27 +2,21 @@ const express = require("express");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ---------------------------
-// Pasta temporária HLS
-// ---------------------------
+// Pasta HLS
 const hlsDir = path.join(__dirname, "hls");
 if (!fs.existsSync(hlsDir)) fs.mkdirSync(hlsDir);
 
 const activeFFMPEG = new Map();
 
-// ---------------------------
 // Caminho do FFmpeg
-// ---------------------------
-// Para Render, baixe FFmpeg estático no build e coloque aqui
-const ffmpegPath = path.join(__dirname, "ffmpeg");
+let ffmpegPath = path.join(__dirname, "ffmpeg");
 
-// ---------------------------
 // Middleware CORS
-// ---------------------------
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
@@ -32,14 +26,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---------------------------
 // Servir frontend
-// ---------------------------
 app.use(express.static("public"));
 
-// ---------------------------
-// Endpoint de canais
-// ---------------------------
+// Endpoint canais
 app.get("/api/channels", (req, res) => {
   const filePath = path.join(__dirname, "channels.txt");
   fs.readFile(filePath, "utf8", (err, data) => {
@@ -66,13 +56,28 @@ app.get("/api/channels", (req, res) => {
   });
 });
 
-// ---------------------------
+// Proxy HTTPS para streams HTTP
+app.get("/proxy", async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).send("URL faltando");
+
+  try {
+    const response = await axios({
+      url,
+      method: "GET",
+      responseType: "stream",
+    });
+    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
+    response.data.pipe(res);
+  } catch (err) {
+    console.error("Erro no proxy:", err.message);
+    res.status(500).send("Erro no proxy");
+  }
+});
+
 // Proxy Live TS -> HLS
-// ---------------------------
 app.get("/live/:channelId.m3u8", (req, res) => {
   const channelId = req.params.channelId;
-
-  // Procurar URL do canal no arquivo channels.txt
   const filePath = path.join(__dirname, "channels.txt");
   const data = fs.readFileSync(filePath, "utf8");
   const lines = data.split(/\r?\n/);
@@ -87,13 +92,14 @@ app.get("/live/:channelId.m3u8", (req, res) => {
 
   if (!channelUrl) return res.status(404).send("Canal não encontrado");
 
+  const proxiedUrl = `/proxy?url=${encodeURIComponent(channelUrl)}`;
   const channelDir = path.join(hlsDir, channelId);
   const playlist = path.join(channelDir, "index.m3u8");
   if (!fs.existsSync(channelDir)) fs.mkdirSync(channelDir, { recursive: true });
 
   if (!activeFFMPEG.has(channelId)) {
     const ffmpeg = spawn(ffmpegPath, [
-      "-i", channelUrl,
+      "-i", proxiedUrl,
       "-c", "copy",
       "-f", "hls",
       "-hls_time", "5",
@@ -104,12 +110,6 @@ app.get("/live/:channelId.m3u8", (req, res) => {
     ]);
 
     ffmpeg.stderr.on("data", data => console.log(`[FFmpeg ${channelId}] ${data.toString()}`));
-
-    ffmpeg.on("error", err => {
-      console.error(`[FFmpeg ${channelId}] ERRO:`, err);
-      activeFFMPEG.delete(channelId);
-    });
-
     ffmpeg.on("close", code => {
       console.log(`[FFmpeg ${channelId}] finalizado com código ${code}`);
       activeFFMPEG.delete(channelId);
@@ -118,50 +118,32 @@ app.get("/live/:channelId.m3u8", (req, res) => {
     activeFFMPEG.set(channelId, ffmpeg);
   }
 
-  // Espera segura pelo playlist com timeout
-  let waited = 0;
   const waitForPlaylist = setInterval(() => {
     if (fs.existsSync(playlist)) {
       clearInterval(waitForPlaylist);
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.sendFile(playlist);
-    } else if (waited > 10000) { // 10s timeout
-      clearInterval(waitForPlaylist);
-      res.status(500).send("Erro ao gerar playlist HLS");
     }
-    waited += 500;
   }, 500);
 });
 
-// ---------------------------
-// Servir segmentos HLS
-// ---------------------------
+// Servir segmentos
 app.use("/hls", express.static(hlsDir));
 
-// ---------------------------
-// Limpeza periódica de segmentos antigos
-// ---------------------------
+// Limpeza periódica
 setInterval(() => {
   const now = Date.now();
   if (!fs.existsSync(hlsDir)) return;
-
   fs.readdirSync(hlsDir).forEach(dir => {
     const channelPath = path.join(hlsDir, dir);
     fs.readdirSync(channelPath).forEach(file => {
       const filePath = path.join(channelPath, file);
       const stats = fs.statSync(filePath);
-
-      // Mantém o playlist, remove apenas segmentos antigos
-      if (file.endsWith(".ts") && (now - stats.mtimeMs > 60 * 1000)) {
-        fs.unlinkSync(filePath);
-      }
+      if (now - stats.mtimeMs > 60 * 1000) fs.unlinkSync(filePath);
     });
   });
 }, 30 * 1000);
 
-// ---------------------------
-// Iniciar servidor
-// ---------------------------
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
